@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adiabatic Diagram — Interactive</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap');
+:root{
+  --bg:#0f1117;--surface:#181c27;--border:#252a3a;
+  --text:#c8cfe0;--dim:#5a6380;--accent:#4f8ef7;
+  --dry:#f97316;--dew:#38bdf8;--wet:#4ade80;
+  --lcl:#a78bfa;--el:#f43f5e;--env:#fbbf24;--lfc:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',sans-serif;font-size:13px;display:flex;height:100vh;overflow:hidden;}
+
+/* ── Sidebar ── */
+#sidebar{width:268px;min-width:268px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;padding:13px 11px;gap:12px;}
+.stitle{font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.12em;color:var(--accent);text-transform:uppercase;margin-bottom:-2px;}
+.group{display:flex;flex-direction:column;gap:7px;}
+.field{display:flex;flex-direction:column;gap:3px;}
+.field label{font-size:10px;color:var(--dim);font-family:'IBM Plex Mono',monospace;letter-spacing:.03em;}
+.field input[type=range]{-webkit-appearance:none;width:100%;height:3px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;}
+.field input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:grab;}
+
+/* slider + number input inline */
+.field-row{display:flex;align-items:center;gap:6px;}
+.field-row input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:var(--border);border-radius:2px;outline:none;cursor:pointer;}
+.field-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--accent);cursor:grab;}
+.field-row input[type=number]{width:52px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'IBM Plex Mono',monospace;font-size:11px;padding:3px 5px;outline:none;-moz-appearance:textfield;}
+.field-row input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;}
+.field-row input[type=number]:focus{border-color:var(--accent);}
+
+.sep{height:1px;background:var(--border);}
+.toggle-row{display:flex;align-items:center;gap:7px;cursor:pointer;}
+.toggle-row input[type=checkbox]{accent-color:var(--accent);cursor:pointer;width:13px;height:13px;}
+.toggle-row span{font-size:12px;}
+.mode-badge{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:10px;padding:3px 7px;border-radius:4px;border:1px solid;cursor:pointer;user-select:none;transition:all .12s;}
+.mode-badge.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+.mode-badge.inactive{background:transparent;border-color:var(--border);color:var(--dim);}
+.seg-block{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:7px 9px;display:flex;flex-direction:column;gap:5px;}
+.seg-header{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--env);display:flex;justify-content:space-between;align-items:center;}
+kbd{background:var(--border);border-radius:3px;padding:1px 5px;font-size:9px;color:var(--text);font-family:'IBM Plex Mono',monospace;}
+.hint{font-size:10px;color:var(--dim);line-height:1.7;font-family:'IBM Plex Mono',monospace;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;}
+
+/* ── Main area ── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;}
+#canvas-wrap{flex:1;position:relative;}
+canvas{display:block;width:100%;height:100%;}
+#tooltip{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:5px 9px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text);pointer-events:none;display:none;white-space:nowrap;z-index:90;}
+#drag-hint{position:absolute;top:8px;left:50%;transform:translateX(-50%);background:rgba(79,142,247,.18);border:1px solid var(--accent);border-radius:5px;padding:4px 14px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--accent);pointer-events:none;display:none;z-index:91;}
+
+/* ── Physics panel (top-right overlay) ── */
+#physics-panel{
+  position:absolute;top:10px;right:10px;
+  background:rgba(24,28,39,.92);
+  border:1px solid var(--border);
+  border-radius:8px;
+  padding:10px 14px;
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:6px 16px;
+  z-index:80;
+  backdrop-filter:blur(6px);
+  min-width:340px;
+}
+.phys-item{display:flex;flex-direction:column;gap:2px;}
+.phys-label{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--dim);letter-spacing:.05em;text-transform:uppercase;}
+.phys-value{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;}
+</style>
+</head>
+<body>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+<div id="sidebar">
+  <div><span class="stitle" style="font-size:11px;letter-spacing:.04em">Adiabatic Diagram</span></div>
+
+  <!-- Axis -->
+  <div class="group">
+    <div class="stitle">Axis</div>
+    <div class="field"><label>TEMP MIN (°C)</label>
+      <div class="field-row"><input type="range" id="tMin" min="-60" max="0" value="-40" step="1"><input type="number" id="tMinN" value="-40" min="-60" max="0" step="1"></div></div>
+    <div class="field"><label>TEMP MAX (°C)</label>
+      <div class="field-row"><input type="range" id="tMax" min="10" max="60" value="40" step="1"><input type="number" id="tMaxN" value="40" min="10" max="60" step="1"></div></div>
+    <div class="field"><label>MAX ALTITUDE (m)</label>
+      <div class="field-row"><input type="range" id="hMax" min="2000" max="20000" value="10000" step="500"><input type="number" id="hMaxN" value="10000" min="2000" max="20000" step="500"></div></div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- Air parcel -->
+  <div class="group">
+    <div class="stitle">Air Parcel</div>
+    <div class="field"><label>SURFACE TEMP (°C)</label>
+      <div class="field-row"><input type="range" id="airTemp" min="-20" max="50" value="25" step="0.5"><input type="number" id="airTempN" value="25" min="-20" max="50" step="0.5"></div></div>
+    <div class="field"><label>DEW POINT (°C)</label>
+      <div class="field-row"><input type="range" id="dewTemp" min="-20" max="49.5" value="15" step="0.5"><input type="number" id="dewTempN" value="15" min="-20" max="49.5" step="0.5"></div></div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- Drag modes -->
+  <div class="group">
+    <div class="stitle">Drag Mode</div>
+    <div style="font-size:10px;color:var(--dim);font-family:'IBM Plex Mono',monospace;">LCL handle: <kbd>Q</kbd> <kbd>W</kbd></div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+      <span class="mode-badge active"   id="lclModeDalr" onclick="setLclMode('dalr')"><kbd>Q</kbd> DALR</span>
+      <span class="mode-badge inactive" id="lclModeDdpr" onclick="setLclMode('ddpr')"><kbd>W</kbd> DDPR</span>
+    </div>
+    <div style="font-size:10px;color:var(--dim);font-family:'IBM Plex Mono',monospace;margin-top:3px;">Surface drag: <kbd>A</kbd> <kbd>S</kbd></div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+      <span class="mode-badge active"   id="surfModeLclFixed" onclick="setSurfMode('lcl-fixed')"><kbd>A</kbd> LCL fixed</span>
+      <span class="mode-badge inactive" id="surfModeDewFixed"  onclick="setSurfMode('dew-fixed')"><kbd>S</kbd> Dew fixed</span>
+    </div>
+    <div style="font-size:10px;color:var(--dim);font-family:'IBM Plex Mono',monospace;margin-top:3px;">Dew drag: <kbd>Z</kbd> <kbd>X</kbd></div>
+    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+      <span class="mode-badge active"   id="dewModeSurf"     onclick="setDewMode('surf-fixed')"><kbd>Z</kbd> Surf fixed</span>
+      <span class="mode-badge inactive" id="dewModeLclTemp"  onclick="setDewMode('lcl-temp-fixed')"><kbd>X</kbd> LCL-T fixed</span>
+    </div>
+  </div>
+  <div class="sep"></div>
+
+  <!-- Environment -->
+  <div class="group">
+    <div class="stitle">Environment</div>
+    <label class="toggle-row"><input type="checkbox" id="chkEnv"><span>Show env. profile <kbd>E</kbd></span></label>
+    <div class="field"><label>ENV SURFACE TEMP (°C)</label>
+      <div class="field-row"><input type="range" id="envT0" min="-20" max="50" value="20" step="0.5"><input type="number" id="envT0N" value="20" min="-20" max="50" step="0.5"></div></div>
+
+    <!-- Segment 1 -->
+    <div class="seg-block">
+      <div class="seg-header"><span>Segment 1</span><span id="seg1Range" style="color:var(--dim)">0 – 3 km</span></div>
+      <div class="field"><label>TOP (km)</label>
+        <div class="field-row"><input type="range" id="seg1Top" min="0.5" max="8" value="3" step="0.5"><input type="number" id="seg1TopN" value="3" min="0.5" max="8" step="0.5"></div></div>
+      <div class="field"><label>LAPSE RATE (°C/km)</label>
+        <div class="field-row"><input type="range" id="lr1" min="-5" max="15" value="6.5" step="0.5"><input type="number" id="lr1N" value="6.5" min="-5" max="15" step="0.5"></div></div>
+    </div>
+    <!-- Segment 2 -->
+    <div class="seg-block">
+      <div class="seg-header"><span>Segment 2</span><span id="seg2Range" style="color:var(--dim)">3 – 7 km</span></div>
+      <div class="field"><label>TOP (km)</label>
+        <div class="field-row"><input type="range" id="seg2Top" min="1" max="18" value="7" step="0.5"><input type="number" id="seg2TopN" value="7" min="1" max="18" step="0.5"></div></div>
+      <div class="field"><label>LAPSE RATE (°C/km)</label>
+        <div class="field-row"><input type="range" id="lr2" min="-5" max="15" value="4.0" step="0.5"><input type="number" id="lr2N" value="4.0" min="-5" max="15" step="0.5"></div></div>
+    </div>
+    <!-- Segment 3 -->
+    <div class="seg-block">
+      <div class="seg-header"><span>Segment 3</span><span id="seg3Range" style="color:var(--dim)">7 km – top</span></div>
+      <div class="field"><label>LAPSE RATE (°C/km)</label>
+        <div class="field-row"><input type="range" id="lr3" min="-5" max="15" value="7.0" step="0.5"><input type="number" id="lr3N" value="7.0" min="-5" max="15" step="0.5"></div></div>
+    </div>
+
+    <label class="toggle-row"><input type="checkbox" id="chkCape"><span>Show CAPE / CIN <kbd>C</kbd></span></label>
+  </div>
+  <div class="sep"></div>
+
+  <div class="hint">
+    <b>Shortcuts</b><br>
+    <kbd>Q</kbd> LCL→DALR &nbsp;<kbd>W</kbd> LCL→DDPR<br>
+    <kbd>A</kbd> Surf→LCL fixed &nbsp;<kbd>S</kbd> Surf→Dew fixed<br>
+    <kbd>Z</kbd> Dew→Surf fixed &nbsp;<kbd>X</kbd> Dew→LCL-T fixed<br>
+    <kbd>E</kbd> Env toggle &nbsp;<kbd>C</kbd> CAPE/CIN toggle
+  </div>
+</div>
+
+<!-- ══ CANVAS ═══════════════════════════════════════════════ -->
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+    <div id="tooltip"></div>
+    <div id="drag-hint"></div>
+
+    <!-- Physics overlay panel -->
+    <div id="physics-panel">
+      <div class="phys-item">
+        <span class="phys-label">Surface Temp</span>
+        <span class="phys-value" id="pAirT" style="color:var(--dry)">—</span>
+      </div>
+      <div class="phys-item">
+        <span class="phys-label">Dew Point</span>
+        <span class="phys-value" id="pDewT" style="color:var(--dew)">—</span>
+      </div>
+      <div class="phys-item">
+        <span class="phys-label">LCL Alt</span>
+        <span class="phys-value" id="pLclH" style="color:var(--lcl)">—</span>
+      </div>
+      <div class="phys-item">
+        <span class="phys-label">LCL Temp</span>
+        <span class="phys-value" id="pLclT" style="color:var(--lcl)">—</span>
+      </div>
+      <div class="phys-item">
+        <span class="phys-label">EL Alt</span>
+        <span class="phys-value" id="pElH" style="color:var(--el)">—</span>
+      </div>
+      <div class="phys-item">
+        <span class="phys-label">EL Temp</span>
+        <span class="phys-value" id="pElT" style="color:var(--el)">—</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DALR=10,SALR=5,DDPR=2;
+
+let state={
+  tMin:-40,tMax:40,hMax:10000,
+  airTemp:25,dewTemp:15,
+  envT0:20,seg1Top:3,seg2Top:7,lr1:6.5,lr2:4.0,lr3:7.0,
+  showEnv:false,showCape:false,
+};
+
+let lclMode ='dalr';        // 'dalr' | 'ddpr'
+let surfMode='lcl-fixed';   // 'lcl-fixed' | 'dew-fixed'
+let dewMode ='surf-fixed';  // 'surf-fixed' | 'lcl-temp-fixed'
+
+/* ── Mode setters ── */
+function setLclMode(m){
+  lclMode=m;
+  document.getElementById('lclModeDalr').className='mode-badge '+(m==='dalr'?'active':'inactive');
+  document.getElementById('lclModeDdpr').className='mode-badge '+(m==='ddpr'?'active':'inactive');
+}
+function setSurfMode(m){
+  surfMode=m;
+  document.getElementById('surfModeLclFixed').className='mode-badge '+(m==='lcl-fixed'?'active':'inactive');
+  document.getElementById('surfModeDewFixed').className ='mode-badge '+(m==='dew-fixed'?'active':'inactive');
+}
+function setDewMode(m){
+  dewMode=m;
+  document.getElementById('dewModeSurf').className   ='mode-badge '+(m==='surf-fixed'?'active':'inactive');
+  document.getElementById('dewModeLclTemp').className='mode-badge '+(m==='lcl-temp-fixed'?'active':'inactive');
+}
+
+/* ── Physics ── */
+function calcLCL(airT,dewT){
+  if(dewT>=airT) return {h:0,t:airT};
+  const km=(airT-dewT)/(DALR-DDPR);
+  return {h:km*1000,t:airT-DALR*km};
+}
+function buildEnvSegs(){
+  const s=state;
+  return[
+    {h1:0,          h2:s.seg1Top*1000, lr:s.lr1},
+    {h1:s.seg1Top*1000, h2:s.seg2Top*1000, lr:s.lr2},
+    {h1:s.seg2Top*1000, h2:s.hMax,         lr:s.lr3},
+  ];
+}
+function buildEnvPts(segs,t0,hMax){
+  const pts=[];let cur=t0;
+  for(const seg of segs){
+    const h2=Math.min(seg.h2,hMax);
+    if(seg.h1>=hMax) break;
+    pts.push({h:seg.h1,t:cur});
+    const tTop=cur-seg.lr*((h2-seg.h1)/1000);
+    pts.push({h:h2,t:tTop});
+    cur=tTop;
+  }
+  return pts;
+}
+function envInterp(pts,h){
+  for(let i=0;i<pts.length-1;i++){
+    if(h>=pts[i].h&&h<=pts[i+1].h){
+      const f=(h-pts[i].h)/(pts[i+1].h-pts[i].h);
+      return pts[i].t+f*(pts[i+1].t-pts[i].t);
+    }
+  }
+  return null;
+}
+function findLfcEl(airT,dewT,envPts,hMax){
+  const lcl=calcLCL(airT,dewT);
+  const step=20;let lfc=null,el=null,prev=null;
+  for(let h=0;h<=hMax;h+=step){
+    const pT=h<=lcl.h?airT-DALR*(h/1000):lcl.t-SALR*((h-lcl.h)/1000);
+    const eT=envInterp(envPts,h);
+    if(eT===null){prev=null;continue;}
+    const diff=pT-eT;
+    if(prev!==null){
+      if(prev<=0&&diff>0&&h>=lcl.h&&!lfc){
+        const f=Math.abs(prev)/(Math.abs(prev)+Math.abs(diff));
+        const lh=(h-step)+f*step;
+        const lt=lh<=lcl.h?airT-DALR*(lh/1000):lcl.t-SALR*((lh-lcl.h)/1000);
+        lfc={h:lh,t:lt};
+      }
+      if(prev>0&&diff<=0&&lfc&&!el){
+        const f=Math.abs(prev)/(Math.abs(prev)+Math.abs(diff));
+        const lh=(h-step)+f*step;
+        const lt=lcl.t-SALR*((lh-lcl.h)/1000);
+        el={h:lh,t:lt};break;
+      }
+    }
+    prev=diff;
+  }
+  return {lfc,el};
+}
+
+/* ── Canvas ── */
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+const wrap=document.getElementById('canvas-wrap');
+const tooltip=document.getElementById('tooltip');
+const dragHint=document.getElementById('drag-hint');
+const PAD={top:30,right:55,bottom:48,left:70};
+let W,H,plotW,plotH;
+
+function resize(){
+  const dpr=window.devicePixelRatio||1;
+  const r=wrap.getBoundingClientRect();
+  W=r.width;H=r.height;
+  canvas.width=W*dpr;canvas.height=H*dpr;
+  ctx.scale(dpr,dpr);
+  plotW=W-PAD.left-PAD.right;
+  plotH=H-PAD.top-PAD.bottom;
+  draw();
+}
+const tX=t=>PAD.left+(t-state.tMin)/(state.tMax-state.tMin)*plotW;
+const hY=h=>PAD.top+plotH-h/state.hMax*plotH;
+const xT=x=>state.tMin+(x-PAD.left)/plotW*(state.tMax-state.tMin);
+const yH=y=>(PAD.top+plotH-y)/plotH*state.hMax;
+
+/* ── Draw ── */
+function draw(){
+  if(!W) return;
+  ctx.clearRect(0,0,W,H);
+  const s=state;
+  const lcl=calcLCL(s.airTemp,s.dewTemp);
+  const segs=buildEnvSegs();
+  const envPts=buildEnvPts(segs,s.envT0,s.hMax);
+
+  ctx.save();
+  ctx.beginPath();ctx.rect(PAD.left,PAD.top,plotW,plotH);ctx.clip();
+
+  /* grid */
+  ctx.strokeStyle='#1a2035';ctx.lineWidth=1;
+  for(let t=Math.ceil(s.tMin/5)*5;t<=s.tMax;t+=5){
+    ctx.beginPath();ctx.moveTo(tX(t),PAD.top);ctx.lineTo(tX(t),PAD.top+plotH);ctx.stroke();
+  }
+  for(let h=0;h<=s.hMax;h+=500){
+    ctx.beginPath();ctx.moveTo(PAD.left,hY(h));ctx.lineTo(PAD.left+plotW,hY(h));ctx.stroke();
+  }
+  /* segment boundary lines */
+  for(const top of[s.seg1Top,s.seg2Top]){
+    const hm=top*1000;
+    if(hm>0&&hm<s.hMax){
+      ctx.strokeStyle='rgba(251,191,36,.18)';ctx.lineWidth=1;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(PAD.left,hY(hm));ctx.lineTo(PAD.left+plotW,hY(hm));ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  /* 0°C line */
+  if(s.tMin<=0&&0<=s.tMax){
+    ctx.strokeStyle='#2a3555';ctx.lineWidth=1.5;ctx.setLineDash([6,4]);
+    ctx.beginPath();ctx.moveTo(tX(0),PAD.top);ctx.lineTo(tX(0),PAD.top+plotH);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /* CAPE / CIN */
+  if(s.showEnv&&s.showCape){
+    const{lfc,el}=findLfcEl(s.airTemp,s.dewTemp,envPts,s.hMax);
+    if(lfc&&el){
+      ctx.beginPath();let first=true;
+      for(let h=lfc.h;h<=el.h;h+=30){
+        const pT=lcl.t-SALR*((h-lcl.h)/1000);
+        first?ctx.moveTo(tX(pT),hY(h)):ctx.lineTo(tX(pT),hY(h));first=false;
+      }
+      for(let h=el.h;h>=lfc.h;h-=30){const eT=envInterp(envPts,h);if(eT!==null)ctx.lineTo(tX(eT),hY(h));}
+      ctx.closePath();ctx.fillStyle='rgba(244,63,94,.18)';ctx.fill();
+      ctx.beginPath();first=true;
+      for(let h=0;h<=lfc.h;h+=30){
+        const pT=h<=lcl.h?s.airTemp-DALR*(h/1000):lcl.t-SALR*((h-lcl.h)/1000);
+        first?ctx.moveTo(tX(pT),hY(h)):ctx.lineTo(tX(pT),hY(h));first=false;
+      }
+      for(let h=lfc.h;h>=0;h-=30){const eT=envInterp(envPts,h);if(eT!==null)ctx.lineTo(tX(eT),hY(h));}
+      ctx.closePath();ctx.fillStyle='rgba(56,189,248,.13)';ctx.fill();
+    }
+  }
+
+  /* env profile */
+  if(s.showEnv){
+    ctx.strokeStyle='#fbbf24';ctx.lineWidth=2;ctx.setLineDash([10,5]);
+    ctx.beginPath();
+    envPts.forEach((p,i)=>i===0?ctx.moveTo(tX(p.t),hY(p.h)):ctx.lineTo(tX(p.t),hY(p.h)));
+    ctx.stroke();ctx.setLineDash([]);
+    const{lfc,el}=findLfcEl(s.airTemp,s.dewTemp,envPts,s.hMax);
+    if(lfc) drawMarker(lfc.t,lfc.h,'#fb923c','LFC','diamond');
+    if(el)  drawMarker(el.t, el.h, '#f43f5e','EL', 'star');
+    /* update physics panel EL */
+    document.getElementById('pElH').textContent=el?Math.round(el.h)+'m':'—';
+    document.getElementById('pElT').textContent=el?el.t.toFixed(1)+'°C':'—';
+  } else {
+    document.getElementById('pElH').textContent='—';
+    document.getElementById('pElT').textContent='—';
+  }
+
+  /* lapse rate lines */
+  drawLine(h=>s.airTemp-DALR*(h/1000),      0,     lcl.h,'#f97316',2.5,[]);
+  drawLine(h=>s.airTemp-DALR*(h/1000),      lcl.h, s.hMax,'#f97316',1,  [5,4]);
+  drawLine(h=>s.dewTemp-DDPR*(h/1000),      0,     lcl.h,'#38bdf8',2,  [8,5]);
+  drawLine(h=>s.dewTemp-DDPR*(h/1000),      lcl.h, s.hMax,'#38bdf8',1,  [4,4]);
+  drawLine(h=>lcl.t-SALR*((h-lcl.h)/1000), lcl.h, s.hMax,'#4ade80',2.5,[4,3]);
+
+  ctx.restore();
+
+  /* axes */
+  ctx.fillStyle='#5a6380';ctx.font='11px IBM Plex Mono,monospace';
+  ctx.textAlign='center';
+  for(let t=Math.ceil(s.tMin/5)*5;t<=s.tMax;t+=5) ctx.fillText(t+'°',tX(t),PAD.top+plotH+16);
+  ctx.textAlign='right';
+  for(let h=0;h<=s.hMax;h+=500){
+    const lab=h>=1000?(h/1000).toFixed(h%1000?1:0)+'km':h+'m';
+    ctx.fillText(lab,PAD.left-7,hY(h)+4);
+  }
+  ctx.textAlign='center';ctx.fillStyle='#8892a4';ctx.font='12px IBM Plex Sans,sans-serif';
+  ctx.fillText('Temperature (°C)',PAD.left+plotW/2,H-10);
+  ctx.save();ctx.translate(13,PAD.top+plotH/2);ctx.rotate(-Math.PI/2);
+  ctx.fillText('Altitude (m)',0,0);ctx.restore();
+
+  /* drag handles */
+  drawHandle(s.dewTemp,0,     '#38bdf8','dew-surface');
+  drawHandle(s.airTemp,0,     '#f97316','surface');
+  drawHandle(lcl.t,   lcl.h, '#a78bfa','lcl');
+
+  /* physics panel */
+  document.getElementById('pAirT').textContent=s.airTemp+'°C';
+  document.getElementById('pDewT').textContent=s.dewTemp+'°C';
+  document.getElementById('pLclH').textContent=Math.round(lcl.h)+'m';
+  document.getElementById('pLclT').textContent=lcl.t.toFixed(1)+'°C';
+}
+
+function drawLine(fn,h0,h1,color,w,dash){
+  ctx.strokeStyle=color;ctx.lineWidth=w;ctx.setLineDash(dash);
+  ctx.beginPath();let first=true;
+  for(let h=h0;h<=h1+20;h+=20){
+    const hc=Math.min(h,h1),t=fn(hc);
+    first?ctx.moveTo(tX(t),hY(hc)):ctx.lineTo(tX(t),hY(hc));first=false;
+  }
+  ctx.stroke();ctx.setLineDash([]);
+}
+function drawMarker(t,h,color,label,shape){
+  const x=tX(t),y=hY(h);
+  ctx.fillStyle=color;ctx.beginPath();
+  if(shape==='diamond'){ctx.moveTo(x,y-8);ctx.lineTo(x+6,y);ctx.lineTo(x,y+8);ctx.lineTo(x-6,y);ctx.closePath();}
+  else if(shape==='star'){
+    for(let i=0;i<5;i++){
+      const a=(i*4*Math.PI/5)-Math.PI/2,b=((i*4+2)*Math.PI/5)-Math.PI/2;
+      i===0?ctx.moveTo(x+8*Math.cos(a),y+8*Math.sin(a)):ctx.lineTo(x+8*Math.cos(a),y+8*Math.sin(a));
+      ctx.lineTo(x+4*Math.cos(b),y+4*Math.sin(b));
+    }ctx.closePath();
+  }
+  ctx.fill();
+  ctx.fillStyle=color;ctx.font='10px IBM Plex Mono,monospace';ctx.textAlign='left';
+  ctx.fillText(`${label}  ${Math.round(h)}m / ${t.toFixed(1)}°C`,x+10,y+4);
+}
+function drawHandle(t,h,color){
+  const x=tX(t),y=hY(h);
+  ctx.save();ctx.shadowColor=color;ctx.shadowBlur=14;
+  ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle='#0f1117';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(x,y,7,0,Math.PI*2);ctx.stroke();
+}
+
+/* ── Drag ── */
+const HR=13;
+let drag=null;
+function hitTest(mx,my){
+  const s=state,lcl=calcLCL(s.airTemp,s.dewTemp);
+  for(const hnd of[
+    {type:'lcl',        t:lcl.t,     h:lcl.h},
+    {type:'surface',    t:s.airTemp, h:0},
+    {type:'dew-surface',t:s.dewTemp, h:0},
+  ].reverse()){
+    const dx=mx-tX(hnd.t),dy=my-hY(hnd.h);
+    if(Math.sqrt(dx*dx+dy*dy)<=HR) return hnd.type;
+  }
+  return null;
+}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const r2=v=>Math.round(v*2)/2;
+
+canvas.addEventListener('mousedown',e=>{
+  const r=canvas.getBoundingClientRect();
+  const hit=hitTest(e.clientX-r.left,e.clientY-r.top);
+  if(hit){drag={type:hit};e.preventDefault();}
+});
+
+window.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  if(!drag){
+    const hit=hitTest(mx,my);
+    canvas.style.cursor=hit?'grab':'crosshair';
+    if(!hit&&mx>PAD.left&&mx<W-PAD.right&&my>PAD.top&&my<PAD.top+plotH){
+      tooltip.textContent=`${xT(mx).toFixed(1)}°C  /  ${Math.round(yH(my))}m`;
+      tooltip.style.left=(mx+14)+'px';tooltip.style.top=(my-10)+'px';tooltip.style.display='block';
+    } else tooltip.style.display='none';
+    return;
+  }
+  tooltip.style.display='none';
+  const rawT=xT(mx),rawH=clamp(yH(my),0,state.hMax*0.95);
+  const s=state;
+
+  if(drag.type==='lcl'){
+    const newH=clamp(rawH,0,s.hMax*0.85);
+    if(lclMode==='dalr'){
+      /* airTemp fixed → solve dewTemp */
+      const nd=s.airTemp-newH*(DALR-DDPR)/1000;
+      if(nd<s.airTemp&&nd>=-30){state.dewTemp=r2(nd);syncPair('dewTemp','dewTempN',state.dewTemp);}
+      showDragHint('[Q] LCL on DALR  →  dewPoint adjusts');
+    } else {
+      /* dewTemp fixed → solve airTemp */
+      const na=s.dewTemp+newH*(DALR-DDPR)/1000;
+      if(na>s.dewTemp&&na<=50){state.airTemp=r2(na);syncPair('airTemp','airTempN',state.airTemp);}
+      showDragHint('[W] LCL on DDPR  →  airTemp adjusts');
+    }
+  } else if(drag.type==='surface'){
+    const na=clamp(r2(rawT),s.tMin+1,s.tMax-1);
+    if(surfMode==='lcl-fixed'){
+      const lcl=calcLCL(s.airTemp,s.dewTemp);
+      const nd=na-lcl.h*(DALR-DDPR)/1000;
+      state.airTemp=na;
+      if(nd<na&&nd>=-30){state.dewTemp=r2(nd);syncPair('dewTemp','dewTempN',state.dewTemp);}
+      showDragHint('[A] Surface  |  LCL alt fixed  →  dewPoint adjusts');
+    } else {
+      state.airTemp=na;
+      if(state.dewTemp>=state.airTemp){state.dewTemp=r2(state.airTemp-0.5);syncPair('dewTemp','dewTempN',state.dewTemp);}
+      showDragHint('[S] Surface  |  dew fixed  →  LCL moves');
+    }
+    syncPair('airTemp','airTempN',state.airTemp);
+  } else if(drag.type==='dew-surface'){
+    if(dewMode==='surf-fixed'){
+      /* airTemp fixed → LCL recalculates normally */
+      const nd=clamp(r2(rawT),s.tMin,s.airTemp-0.5);
+      state.dewTemp=nd;syncPair('dewTemp','dewTempN',nd);
+      showDragHint('[Z] Dew drag  |  surfTemp fixed  →  LCL moves');
+    } else {
+      /* LCL temperature fixed → when dewTemp changes, airTemp and LCL altitude adjust
+         LCL_t = airT - DALR*(LCL_h/1000)  and  LCL_h = (airT-dewT)/(DALR-DDPR)*1000
+         fixing LCL_t: airT = LCL_t + DALR*(LCL_h/1000)
+         substituting LCL_h: airT = LCL_t + DALR*(airT-dewT)/((DALR-DDPR))
+         solve for airT: airT*(1 - DALR/(DALR-DDPR)) = LCL_t - DALR*dewT/(DALR-DDPR)
+         airT = (LCL_t - DALR*dewT/(DALR-DDPR)) / (1 - DALR/(DALR-DDPR))           */
+      const curLcl=calcLCL(s.airTemp,s.dewTemp);
+      const fixedLclT=curLcl.t;
+      const nd=clamp(r2(rawT),s.tMin,s.tMax-2);
+      const ratio=DALR/(DALR-DDPR);
+      const na=(fixedLclT-ratio*nd)/(1-ratio);
+      if(na>nd&&na<=50&&na>=-20){
+        state.dewTemp=nd;state.airTemp=r2(na);
+        syncPair('dewTemp','dewTempN',nd);
+        syncPair('airTemp','airTempN',state.airTemp);
+      }
+      showDragHint('[X] Dew drag  |  LCL temp fixed  →  airTemp & LCL alt adjust');
+    }
+  }
+  draw();
+});
+
+window.addEventListener('mouseup',()=>{
+  if(drag){drag=null;canvas.style.cursor='crosshair';dragHint.style.display='none';}
+});
+
+let hintTimer=null;
+function showDragHint(msg){
+  dragHint.textContent=msg;dragHint.style.display='block';
+  clearTimeout(hintTimer);
+  hintTimer=setTimeout(()=>dragHint.style.display='none',1800);
+}
+
+/* ── Slider + number input sync ── */
+function syncPair(sliderId,numId,val){
+  document.getElementById(sliderId).value=val;
+  document.getElementById(numId).value=val;
+}
+
+function bindPair(sliderId,numId,key,onChange){
+  const sl=document.getElementById(sliderId);
+  const nm=document.getElementById(numId);
+  const update=v=>{
+    v=parseFloat(v);
+    if(isNaN(v)) return;
+    const min=parseFloat(sl.min),max=parseFloat(sl.max);
+    v=Math.max(min,Math.min(max,v));
+    state[key]=v;
+    sl.value=v;nm.value=v;
+    if(onChange) onChange(v);
+    draw();
+  };
+  sl.addEventListener('input',()=>update(sl.value));
+  nm.addEventListener('change',()=>update(nm.value));
+  nm.addEventListener('input',()=>update(nm.value));
+}
+
+bindPair('tMin','tMinN','tMin');
+bindPair('tMax','tMaxN','tMax');
+bindPair('hMax','hMaxN','hMax');
+bindPair('airTemp','airTempN','airTemp',v=>{
+  if(state.dewTemp>=v){state.dewTemp=r2(v-0.5);syncPair('dewTemp','dewTempN',state.dewTemp);}
+});
+bindPair('dewTemp','dewTempN','dewTemp',v=>{
+  if(v>=state.airTemp){state.dewTemp=r2(state.airTemp-0.5);syncPair('dewTemp','dewTempN',state.dewTemp);}
+});
+bindPair('envT0','envT0N','envT0');
+bindPair('lr1','lr1N','lr1');
+bindPair('lr2','lr2N','lr2');
+bindPair('lr3','lr3N','lr3');
+
+function bindSegTop(sliderId,numId,key){
+  const sl=document.getElementById(sliderId);
+  const nm=document.getElementById(numId);
+  const update=v=>{
+    v=parseFloat(v);if(isNaN(v)) return;
+    state[key]=v;sl.value=v;nm.value=v;
+    updateSegRangeLabels();draw();
+  };
+  sl.addEventListener('input',()=>update(sl.value));
+  nm.addEventListener('change',()=>update(nm.value));
+  nm.addEventListener('input',()=>update(nm.value));
+}
+bindSegTop('seg1Top','seg1TopN','seg1Top');
+bindSegTop('seg2Top','seg2TopN','seg2Top');
+
+function updateSegRangeLabels(){
+  const s=state;
+  if(s.seg2Top<=s.seg1Top){
+    state.seg2Top=s.seg1Top+0.5;
+    syncPair('seg2Top','seg2TopN',state.seg2Top);
+  }
+  document.getElementById('seg1Range').textContent=`0 – ${s.seg1Top} km`;
+  document.getElementById('seg2Range').textContent=`${s.seg1Top} – ${s.seg2Top} km`;
+  document.getElementById('seg3Range').textContent=`${s.seg2Top} km – top`;
+}
+
+document.getElementById('chkEnv').addEventListener('change',e=>{state.showEnv=e.target.checked;draw();});
+document.getElementById('chkCape').addEventListener('change',e=>{state.showCape=e.target.checked;draw();});
+
+/* ── Keyboard shortcuts ── */
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  switch(e.key.toLowerCase()){
+    case 'q': setLclMode('dalr');       showDragHint('[Q] LCL mode → DALR line'); break;
+    case 'w': setLclMode('ddpr');       showDragHint('[W] LCL mode → DDPR line'); break;
+    case 'a': setSurfMode('lcl-fixed'); showDragHint('[A] Surface → LCL alt fixed'); break;
+    case 's': setSurfMode('dew-fixed'); showDragHint('[S] Surface → Dew fixed'); break;
+    case 'z': setDewMode('surf-fixed');     showDragHint('[Z] Dew → Surface temp fixed'); break;
+    case 'x': setDewMode('lcl-temp-fixed'); showDragHint('[X] Dew → LCL temp fixed'); break;
+    case 'e':
+      state.showEnv=!state.showEnv;
+      document.getElementById('chkEnv').checked=state.showEnv;
+      showDragHint('[E] Env profile '+(state.showEnv?'ON':'OFF'));
+      draw(); break;
+    case 'c':
+      state.showCape=!state.showCape;
+      document.getElementById('chkCape').checked=state.showCape;
+      showDragHint('[C] CAPE/CIN '+(state.showCape?'ON':'OFF'));
+      draw(); break;
+  }
+});
+
+/* ── Init ── */
+const ro=new ResizeObserver(resize);
+ro.observe(wrap);
+updateSegRangeLabels();
+resize();
+</script>
+</body>
+</html>
